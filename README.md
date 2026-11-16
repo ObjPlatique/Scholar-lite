@@ -1,6 +1,6 @@
 # Scholar Lite
 
-Static HTML/CSS/JS starter using Bootstrap, Firebase Authentication (email/password and Google), Firestore, and Gemini (model `gemini-2.5-flash`).
+Static HTML/CSS/JS starter using Bootstrap, Firebase Authentication (email/password and Google), Firestore, and Gemini (`gemini-3.8-flash` via the Interactions API).
 
 ## Setup
 1. Open `js/firebaseConfig.js` and replace the Firebase placeholders with your Firebase Web App config. Add a Gemini API key to `geminiApiKey`. Use a newly generated key; do not reuse a key that has been exposed publicly.
