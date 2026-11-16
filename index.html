@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Scholar Lite</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+<header class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
+    <div class="container-fluid px-3">
+        <button class="btn btn-outline-secondary me-2" id="settingsBtn" aria-label="Cài đặt">⚙</button>
+        <a class="navbar-brand fw-bold" href="#" data-page="home">Scholar Lite</a>
+        <nav id="topNav" class="d-none d-lg-flex align-items-center gap-2 mx-auto">
+            <a class="nav-link" href="#" data-page="assistant">Trợ lý học tập</a>
+            <a class="nav-link" href="#" data-page="quiz">Tạo câu hỏi</a>
+            <a class="nav-link" href="#" data-page="todo">To-do</a>
+            <a class="nav-link" href="#" data-page="pomodoro">Pomodoro</a>
+            <a class="nav-link" href="#" data-page="note">Note</a>
+        </nav>
+        <button class="btn btn-primary btn-sm ms-auto me-2" id="authBtn">Đăng nhập</button>
+        <button class="btn btn-outline-secondary" id="sidebarToggle" aria-label="Mở sidebar">☰</button>
+    </div>
+</header>
+<div class="sidebar-backdrop" id="backdrop"></div>
+<aside class="sidebar" id="sidebar">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <strong>Điều hướng</strong>
+        <button class="btn-close" id="sidebarClose"></button>
+    </div>
+    <a href="#" data-page="home">Trang chủ</a>
+    <a href="#" data-page="assistant">Trợ lý học tập</a>
+    <a href="#" data-page="quiz">Tạo câu hỏi</a>
+    <a href="#" data-page="todo">To-do</a>
+    <a href="#" data-page="pomodoro">Pomodoro</a>
+    <a href="#" data-page="note">Note</a>
+</aside>
+<main class="container py-4" id="content" aria-live="polite"></main>
+<footer class="footer mt-auto py-4 bg-light border-top">
+    <div class="container text-center">
+        <span class="text-muted">© 2026 Scholar Lite · Built with Bootstrap</span>
+    </div>
+</footer>
+<div id="notice" class="toast-notice d-none"></div>
+<div class="modal fade" id="authModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Đăng nhập Scholar Lite</h5>
+                <button class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="emailForm">
+                    <label class="form-label">Email</label>
+                    <input class="form-control mb-3" type="email" id="email" required>
+                    <label class="form-label">Mật khẩu</label>
+                    <input class="form-control mb-3" type="password" id="password" minlength="6" required>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary" type="submit">Đăng nhập</button>
+                        <button class="btn btn-outline-primary" type="button" id="registerBtn">Tạo tài khoản</button>
+                    </div>
+                </form>
+                <hr>
+                <button class="btn btn-outline-dark w-100" id="googleBtn">Tiếp tục với Google</button>
+                <p class="small text-muted mt-3 mb-0" id="authMessage"></p>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
