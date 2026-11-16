@@ -16,35 +16,63 @@ module.exports = async function handler(req, res) {
   }
 
   const safeMaxTokens = Math.min(4096, Math.max(128, Number(maxOutputTokens) || 550));
-  const payload = {
-    model: "gemini-3.8-flash",
-    input: prompt.slice(0, 18000),
-    store: false,
-    stream: true,
-    generation_config: { max_output_tokens: safeMaxTokens }
-  };
-  if (typeof systemInstruction === "string" && systemInstruction.trim()) {
-    payload.system_instruction = systemInstruction.slice(0, 5000);
-  }
+  const models = [...new Set([
+    process.env.GEMINI_MODEL,
+    "gemini-3.5-flash-lite",
+    "gemini-3.7-flash",
+    "gemini-3.8-flash"
+  ].filter(Boolean))];
 
   let upstream;
-  try {
-    upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify(payload)
-    });
-  } catch (error) {
-    console.error("Gemini connection error:", error);
-    return res.status(502).json({ error: "Máy chủ không kết nối được Gemini API." });
+  let lastError = "";
+  let selectedModel = "";
+
+  // Try a low-latency model first, then fall back if Google is overloaded.
+  for (const model of models) {
+    const payload = {
+      model,
+      input: prompt.slice(0, 18000),
+      store: false,
+      stream: true,
+      generation_config: { max_output_tokens: safeMaxTokens }
+    };
+    if (typeof systemInstruction === "string" && systemInstruction.trim()) {
+      payload.system_instruction = systemInstruction.slice(0, 5000);
+    }
+
+    try {
+      upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify(payload)
+      });
+    } catch (error) {
+      console.error("Gemini connection error:", error);
+      return res.status(502).json({ error: "Máy chủ không kết nối được Gemini API." });
+    }
+
+    if (upstream.ok) {
+      selectedModel = model;
+      break;
+    }
+
+    const result = await upstream.json().catch(() => ({}));
+    lastError = result.error?.message || ("Gemini API trả về HTTP " + upstream.status);
+    console.error("Gemini model error:", model, upstream.status, lastError);
+
+    // Only fall back for temporary capacity/rate-limit/server errors.
+    if (![429, 500, 502, 503, 504].includes(upstream.status)) {
+      return res.status(upstream.status).json({ error: lastError, code: result.error?.status || null });
+    }
   }
 
-  if (!upstream.ok) {
-    const result = await upstream.json().catch(() => ({}));
-    const message = result.error?.message || ("Gemini API trả về HTTP " + upstream.status);
-    console.error("Gemini API error:", upstream.status, message);
-    return res.status(upstream.status).json({ error: message, code: result.error?.status || null });
+  if (!upstream || !upstream.ok) {
+    return res.status(503).json({
+      error: "Các mô hình Gemini hiện đều quá tải. Vui lòng thử lại sau ít phút.",
+      detail: lastError
+    });
   }
+  console.info("Gemini model selected:", selectedModel);
 
   if (!upstream.body) {
     return res.status(502).json({ error: "Gemini không trả về luồng dữ liệu." });
