@@ -1,17 +1,25 @@
 # Scholar Lite
 
-Static HTML/CSS/JS starter using Bootstrap, Firebase Authentication (email/password and Google), Firestore, and Gemini (`gemini-3.8-flash` via the Interactions API).
+Static HTML/CSS/JS app using Bootstrap, Firebase Authentication, Firestore, and Gemini 3.8 Flash through the Interactions API.
 
 ## Setup
-1. Open `js/firebaseConfig.js` and replace the Firebase placeholders with your Firebase Web App config. Add a Gemini API key to `geminiApiKey`. Use a newly generated key; do not reuse a key that has been exposed publicly.
-2. In Firebase Authentication, enable Email/Password and Google providers. Add your local host (e.g. `localhost`) to Authorized domains.
+
+1. Configure `js/firebaseConfig.js` with your Firebase Web App configuration. Do not put the Gemini API key in this file.
+2. In Firebase Authentication, enable Email/Password and Google providers. Add your deployed domain (and `localhost` for local development) to Authorized domains.
 3. Create a Firestore database and deploy rules restricting each user's data to their own UID. Example:
    ```
    match /users/{uid}/scholarLite/{document=**} {
      allow read, write: if request.auth != null && request.auth.uid == uid;
    }
    ```
-4. Serve the folder using a local web server (ES modules do not work reliably from `file://`), e.g. `python -m http.server 8000`, then visit `http://localhost:8000`.
+4. Deploy this repository to Vercel. Vercel automatically serves `api/gemini.js` as the `/api/gemini` serverless endpoint.
+5. In Vercel Project Settings → Environment Variables, add `GEMINI_API_KEY` with your Gemini API key, then redeploy.
+6. Open the deployed website and test Study Assistant and Quiz Generator.
 
-## Gemini security
-This static version calls Gemini directly from the browser for convenient local testing. The API key can be viewed by visitors and must not be used on a public deployment. For production, move Gemini calls to a server-side endpoint and keep the key in server environment variables.
+## Local development
+
+A static server such as `python -m http.server` only serves HTML/CSS/JS; it does not execute `api/gemini.js`. Use the Vercel development runtime (`vercel dev`) to test the full app locally.
+
+## Security
+
+Gemini requests are sent through the server-side endpoint. Keep `GEMINI_API_KEY` only in server environment variables; never commit it or expose it in browser JavaScript. If a Gemini key was previously placed in a public file, revoke it and create a new one.
