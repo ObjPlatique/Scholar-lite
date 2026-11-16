@@ -9,8 +9,8 @@ import { firebaseConfig } from "./firebaseConfig.js";
 const $ = (s) => document.querySelector(s);
 const content = $("#content");
 const pages = {home:"Trang chủ",assistant:"Trợ lý học tập",quiz:"Tạo câu hỏi",todo:"To-do",pomodoro:"Pomodoro",note:"Note"};
-const GEMINI_MODEL = "gemini-2.5-flash";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 let current="home", user=null, auth=null, db=null, modal=null;
 let tasks=[], note="", chat=[], quiz=null, answers={}, submitted=false;
 let timerSeconds=1500, timerId=null;
@@ -73,20 +73,47 @@ function render(){
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 function getGeminiKey(){const k=firebaseConfig.geminiApiKey;if(!k||k.startsWith("YOUR_"))throw Error("Hãy thêm Gemini API key vào js/firebaseConfig.js.");return k;}
 async function callGemini(prompt,systemInstruction,maxOutputTokens=700){
- const body={contents:[{role:"user",parts:[{text:prompt}]}],generationConfig:{maxOutputTokens,temperature:0.7}};
- if(systemInstruction)body.systemInstruction={parts:[{text:systemInstruction}]};
+ const key=getGeminiKey();
+ const input=systemInstruction
+   ? `HƯỚNG DẪN HỆ THỐNG:\n${systemInstruction}\n\nYÊU CẦU:\n${prompt}\n\nHãy trả lời trực tiếp yêu cầu trên.`
+   : prompt;
  let error;
  for(let n=1;n<=2;n++){
-  let res;try{res=await fetch(GEMINI_URL+"?key="+encodeURIComponent(getGeminiKey()),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});}catch(e){error=e;if(n===1){await new Promise(r=>setTimeout(r,400));continue;}break;}
+  let res;
+  try{
+   res=await fetch(GEMINI_URL,{
+    method:"POST",
+    headers:{
+     "Content-Type":"application/json",
+     "x-goog-api-key":key,
+     "Api-Revision":"2026-05-20"
+    },
+    body:JSON.stringify({model:GEMINI_MODEL,input,store:false})
+   });
+  }catch(e){
+   error=e;
+   if(n===1){await new Promise(r=>setTimeout(r,500));continue;}
+   break;
+  }
   const data=await res.json().catch(()=>({}));
-  if(res.ok){const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("\n").trim();if(text)return text;throw Error("Gemini không trả về nội dung văn bản.");}
+  if(res.ok){
+   const text=(data.steps||[])
+    .filter(step=>step.type==="model_output")
+    .flatMap(step=>step.content||[])
+    .filter(part=>part.type==="text"&&typeof part.text==="string")
+    .map(part=>part.text)
+    .join("\\n").trim();
+   if(text)return text;
+   throw Error("Gemini không trả về nội dung văn bản.");
+  }
   error=Error(data.error?.message||"Gemini API error "+res.status);
-  if(/high demand|overload|temporarily unavailable/i.test(error.message)||![429,500,502,503,504].includes(res.status)||n===2)break;
-  await new Promise(r=>setTimeout(r,500));
+  if(![429,500,502,503,504].includes(res.status)||n===2)break;
+  await new Promise(r=>setTimeout(r,700));
  }
  const m=error?.message||"Không thể kết nối Gemini.";
  if(/quota|rate.?limit|resource_exhausted/i.test(m))throw Error("Gemini đang giới hạn lượt gọi API hoặc đã hết quota.");
  if(/high demand|overload|temporarily unavailable/i.test(m))throw Error("Gemini đang quá tải. Vui lòng thử lại sau.");
+ if(/api.?key|permission|unauthorized|forbidden/i.test(m))throw Error("Gemini API key không hợp lệ hoặc chưa được cấp quyền.");
  throw Error("Gemini chưa thể xử lý yêu cầu: "+m);
 }
 async function askGemini(){
