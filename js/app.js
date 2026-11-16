@@ -48,7 +48,7 @@ function render(){
  document.title=pages[current]+" · Scholar Lite";
  document.querySelectorAll("#topNav [data-page]").forEach(a=>a.classList.toggle("active",a.dataset.page===current));
  if(current==="home") content.innerHTML=`<section class="hero mb-4"><p class="text-primary fw-semibold">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1 class="display-5 fw-bold">Học tập gọn nhẹ hơn.</h1><p class="lead text-secondary">Hỏi bài, tạo trắc nghiệm, quản lý công việc, tập trung và ghi chú trong một nơi.</p><button class="btn btn-primary me-2" data-page="assistant">Bắt đầu học</button><button class="btn btn-outline-primary" data-page="todo">Xem To-do</button></section><div class="row g-3">${["assistant","quiz","todo","pomodoro","note"].map(p=>`<div class="col-md-6 col-lg-4"><div class="app-card feature-card"><h5>${pages[p]}</h5><p class="text-secondary">Mở công cụ ${pages[p].toLowerCase()}.</p><button class="btn btn-sm btn-outline-primary" data-page="${p}">Mở công cụ</button></div></div>`).join("")}</div>`;
- if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div>${esc(m.text).replace(/\n/g,"<br>")}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-secondary" id="clearChat">Xóa hội thoại</button><p class="small text-muted mt-3">Cấu hình Gemini API key trong js/firebaseConfig.js. Không đưa key lên website công khai.</p></div>`;
+ if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div>${esc(m.text).replace(/\n/g,"<br>")}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-secondary" id="clearChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div>`;
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
  if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1><div class="app-card text-center"><div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div><button class="btn btn-primary" id="timerStart">Bắt đầu</button> <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button><p class="text-muted mt-3">Phiên tập trung 25 phút</p></div>`;
@@ -71,9 +71,11 @@ function render(){
  if(current==="quiz"&&quiz) renderQuiz();
 }
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
-async function callGemini(prompt,systemInstruction,maxOutputTokens=700){
- let error;
- for(let attempt=1;attempt<=2;attempt++){
+let isAsking = false;
+
+async function callGemini(prompt,systemInstruction,maxOutputTokens=700,onChunk=()=>{}){
+ let lastError;
+ for(let attempt=0;attempt<2;attempt++){
   let response;
   try{
    response=await fetch("/api/gemini",{
@@ -82,28 +84,91 @@ async function callGemini(prompt,systemInstruction,maxOutputTokens=700){
     body:JSON.stringify({prompt,systemInstruction,maxOutputTokens})
    });
   }catch(e){
-   error=Error("Không kết nối được máy chủ Scholar Lite. Hãy triển khai ứng dụng cùng thư mục /api trên Vercel; chạy bằng python http.server sẽ không có API backend.");
-   if(attempt===1){await new Promise(r=>setTimeout(r,400));continue;}
-   break;
+   throw Error("Không kết nối được máy chủ Scholar Lite. Hãy kiểm tra kết nối mạng hoặc cấu hình Vercel.");
   }
-  const data=await response.json().catch(()=>({}));
-  if(response.ok&&typeof data.text==="string"&&data.text.trim())return data.text.trim();
-  error=Error(data.error||("Máy chủ trả về HTTP "+response.status));
-  if(![429,500,502,503,504].includes(response.status)||attempt===2)break;
-  await new Promise(r=>setTimeout(r,700));
+
+  if(!response.ok){
+   const data=await response.json().catch(()=>({}));
+   lastError=Error(data.error||("Máy chủ trả về HTTP "+response.status));
+   // Retry only temporary server/rate-limit errors, never auth or request errors.
+   if(attempt===0&&[429,500,502,503,504].includes(response.status)){
+    await new Promise(r=>setTimeout(r,900));
+    continue;
+   }
+   if(response.status===401||response.status===403)throw Error("Gemini API key không hợp lệ hoặc chưa được cấp quyền.");
+   throw lastError;
+  }
+
+  if(!response.body)throw Error("Trình duyệt không hỗ trợ nhận phản hồi dạng luồng.");
+  const reader=response.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="",fullText="";
+  try{
+   while(true){
+    const {value,done}=await reader.read();
+    if(done)break;
+    buffer+=decoder.decode(value,{stream:true});
+    const events=buffer.split(/\r?\n\r?\n/);
+    buffer=events.pop()||"";
+    for(const eventText of events){
+     const dataLine=eventText.split(/\r?\n/).find(line=>line.startsWith("data:"));
+     if(!dataLine)continue;
+     let event;
+     try{event=JSON.parse(dataLine.slice(5).trim());}catch{continue;}
+     if(event.error)throw Error(event.error);
+     if(typeof event.text==="string"&&event.text){
+      fullText+=event.text;
+      onChunk(event.text);
+     }
+    }
+   }
+   buffer+=decoder.decode();
+   if(buffer.trim()){
+    const dataLine=buffer.split(/\r?\n/).find(line=>line.startsWith("data:"));
+    if(dataLine){
+     const event=JSON.parse(dataLine.slice(5).trim());
+     if(event.error)throw Error(event.error);
+     if(typeof event.text==="string"){fullText+=event.text;onChunk(event.text);}
+    }
+   }
+  }catch(e){
+   try{await reader.cancel();}catch{}
+   throw e;
+  }
+  if(!fullText.trim())throw Error("Gemini chưa trả về nội dung. Hãy thử lại.");
+  return fullText.trim();
  }
- const message=error?.message||"Không thể kết nối Gemini."; 
- if(/quota|rate.?limit|resource_exhausted/i.test(message))throw Error("Gemini đang giới hạn lượt gọi API hoặc đã hết quota.");
- if(/api.?key|permission|unauthorized|forbidden/i.test(message))throw Error("Gemini API key không hợp lệ hoặc chưa được cấp quyền.");
- throw Error(message);
+ throw lastError||Error("Không thể kết nối Gemini.");
+}
+function updateChatLog(){
+ const log=$("#chatLog");
+ if(!log)return;
+ log.innerHTML=chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div>${esc(m.text).replace(/\n/g,"<br>")}</div></div>`).join("");
+ log.scrollTop=log.scrollHeight;
 }
 async function askGemini(){
- const prompt=$("#prompt").value.trim();if(!prompt)return;
- chat.push({role:"user",text:prompt});$("#prompt").value="";render();
- const btn=$("#askBtn");if(btn){btn.disabled=true;btn.textContent="Đang trả lời...";}
- try{const context=chat.slice(-5).map(m=>(m.role==="user"?"Người học: ":"Trợ lý: ")+m.text.slice(0,1200)).join("\n\n");const answer=await callGemini(context,"Bạn là trợ lý học tập. Trả lời tiếng Việt chính xác, trực tiếp và súc tích.",700);chat.push({role:"model",text:answer});}
- catch(e){chat.push({role:"model",text:"Lỗi: "+e.message});}
+ if(isAsking)return;
+ const input=$("#prompt"),prompt=input.value.trim();if(!prompt)return;
+ isAsking=true;
+ chat.push({role:"user",text:prompt});
+ input.value="";
+ const context=chat.slice(-6).map(m=>(m.role==="user"?"Người học: ":"Trợ lý: ")+m.text.slice(0,1200)).join("\n\n");
+ const answerIndex=chat.length;
+ chat.push({role:"model",text:""});
  render();
+ const btn=$("#askBtn");if(btn){btn.disabled=true;btn.textContent="Đang tạo câu trả lời...";}
+ try{
+  await callGemini(context,"Bạn là trợ lý học tập. Trả lời tiếng Việt chính xác, trực tiếp và súc tích. Ưu tiên câu trả lời ngắn gọn, có cấu trúc; chỉ giải thích dài khi người học yêu cầu.",550,chunk=>{
+   chat[answerIndex].text+=chunk;
+   updateChatLog();
+  });
+ }catch(e){
+  chat[answerIndex].text="Lỗi: "+e.message;
+  updateChatLog();
+ }finally{
+  isAsking=false;
+  render();
+ }
 }
 async function generateQuiz(){
  const subject=$("#subject").value.trim(),topic=$("#topic").value.trim(),count=Number($("#count").value),difficulty=$("#difficulty").value;
