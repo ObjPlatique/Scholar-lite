@@ -1,4 +1,4 @@
-// Vercel Serverless Function: keeps the Gemini API key on the server.
+// Vercel Serverless Function: streams Gemini output to the browser.
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -10,45 +10,94 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: "Thiếu biến môi trường GEMINI_API_KEY trong cấu hình Vercel." });
   }
 
-  const { prompt, systemInstruction = "", maxOutputTokens = 700 } = req.body || {};
+  const { prompt, systemInstruction = "", maxOutputTokens = 550 } = req.body || {};
   if (typeof prompt !== "string" || !prompt.trim()) {
     return res.status(400).json({ error: "Prompt không hợp lệ." });
   }
-  const safeMaxTokens = Math.min(4096, Math.max(128, Number(maxOutputTokens) || 700));
+
+  const safeMaxTokens = Math.min(4096, Math.max(128, Number(maxOutputTokens) || 550));
   const payload = {
     model: "gemini-3.8-flash",
-    input: prompt.slice(0, 30000),
+    input: prompt.slice(0, 18000),
     store: false,
+    stream: true,
     generation_config: { max_output_tokens: safeMaxTokens }
   };
   if (typeof systemInstruction === "string" && systemInstruction.trim()) {
-    payload.system_instruction = systemInstruction.slice(0, 8000);
+    payload.system_instruction = systemInstruction.slice(0, 5000);
   }
 
+  let upstream;
   try {
-    const upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+    upstream = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify(payload)
     });
-    const result = await upstream.json().catch(() => ({}));
-    if (!upstream.ok) {
-      const message = result.error?.message || ("Gemini API trả về HTTP " + upstream.status);
-      return res.status(upstream.status).json({ error: message });
-    }
-    const text = (result.steps || [])
-      .filter(step => step.type === "model_output")
-      .flatMap(step => step.content || [])
-      .filter(part => part.type === "text" && typeof part.text === "string")
-      .map(part => part.text)
-      .join("\n")
-      .trim();
-    if (!text) {
-      return res.status(502).json({ error: "Gemini không trả về văn bản. Trạng thái: " + (result.status || "không xác định") });
-    }
-    return res.status(200).json({ text });
   } catch (error) {
-    console.error("Gemini proxy error:", error);
-    return res.status(502).json({ error: "Máy chủ không kết nối được Gemini API. Hãy kiểm tra kết nối mạng và thử lại." });
+    console.error("Gemini connection error:", error);
+    return res.status(502).json({ error: "Máy chủ không kết nối được Gemini API." });
   }
-}
+
+  if (!upstream.ok) {
+    const result = await upstream.json().catch(() => ({}));
+    const message = result.error?.message || ("Gemini API trả về HTTP " + upstream.status);
+    console.error("Gemini API error:", upstream.status, message);
+    return res.status(upstream.status).json({ error: message, code: result.error?.status || null });
+  }
+
+  if (!upstream.body) {
+    return res.status(502).json({ error: "Gemini không trả về luồng dữ liệu." });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const send = (data) => {
+    if (!res.writableEnded) res.write("data: " + JSON.stringify(data) + "\n\n");
+  };
+
+  const processEvent = (raw) => {
+    const data = raw.split(/\r?\n/)
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trim())
+      .join("\n");
+    if (!data || data === "[DONE]") return;
+    let event;
+    try { event = JSON.parse(data); } catch { return; }
+
+    if (event.event_type === "error" || event.error) {
+      send({ error: event.error?.message || "Gemini gặp lỗi trong khi tạo câu trả lời." });
+      return;
+    }
+    if (event.event_type === "step.delta" && event.delta?.type === "text" &&
+        typeof event.delta.text === "string" && event.delta.text) {
+      send({ text: event.delta.text });
+    }
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = events.pop() || "";
+      for (const event of events) processEvent(event);
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) processEvent(buffer);
+  } catch (error) {
+    console.error("Gemini stream error:", error);
+    send({ error: "Luồng phản hồi bị gián đoạn. Hãy thử gửi lại câu hỏi." });
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
+};
