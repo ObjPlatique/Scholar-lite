@@ -71,50 +71,31 @@ function render(){
  if(current==="quiz"&&quiz) renderQuiz();
 }
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
-function getGeminiKey(){const k=firebaseConfig.geminiApiKey;if(!k||k.startsWith("YOUR_"))throw Error("Hãy thêm Gemini API key vào js/firebaseConfig.js.");return k;}
 async function callGemini(prompt,systemInstruction,maxOutputTokens=700){
- const key=getGeminiKey();
- const input=systemInstruction
-   ? `HƯỚNG DẪN HỆ THỐNG:\n${systemInstruction}\n\nYÊU CẦU:\n${prompt}\n\nHãy trả lời trực tiếp yêu cầu trên.`
-   : prompt;
  let error;
- for(let n=1;n<=2;n++){
-  let res;
+ for(let attempt=1;attempt<=2;attempt++){
+  let response;
   try{
-   res=await fetch(GEMINI_URL,{
+   response=await fetch("/api/gemini",{
     method:"POST",
-    headers:{
-     "Content-Type":"application/json",
-     "x-goog-api-key":key,
-     "Api-Revision":"2026-05-20"
-    },
-    body:JSON.stringify({model:GEMINI_MODEL,input,store:false})
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({prompt,systemInstruction,maxOutputTokens})
    });
   }catch(e){
-   error=e;
-   if(n===1){await new Promise(r=>setTimeout(r,500));continue;}
+   error=Error("Không kết nối được máy chủ Scholar Lite. Hãy triển khai ứng dụng cùng thư mục /api trên Vercel; chạy bằng python http.server sẽ không có API backend.");
+   if(attempt===1){await new Promise(r=>setTimeout(r,400));continue;}
    break;
   }
-  const data=await res.json().catch(()=>({}));
-  if(res.ok){
-   const text=(data.steps||[])
-    .filter(step=>step.type==="model_output")
-    .flatMap(step=>step.content||[])
-    .filter(part=>part.type==="text"&&typeof part.text==="string")
-    .map(part=>part.text)
-    .join("\\n").trim();
-   if(text)return text;
-   throw Error("Gemini không trả về nội dung văn bản.");
-  }
-  error=Error(data.error?.message||"Gemini API error "+res.status);
-  if(![429,500,502,503,504].includes(res.status)||n===2)break;
+  const data=await response.json().catch(()=>({}));
+  if(response.ok&&typeof data.text==="string"&&data.text.trim())return data.text.trim();
+  error=Error(data.error||("Máy chủ trả về HTTP "+response.status));
+  if(![429,500,502,503,504].includes(response.status)||attempt===2)break;
   await new Promise(r=>setTimeout(r,700));
  }
- const m=error?.message||"Không thể kết nối Gemini.";
- if(/quota|rate.?limit|resource_exhausted/i.test(m))throw Error("Gemini đang giới hạn lượt gọi API hoặc đã hết quota.");
- if(/high demand|overload|temporarily unavailable/i.test(m))throw Error("Gemini đang quá tải. Vui lòng thử lại sau.");
- if(/api.?key|permission|unauthorized|forbidden/i.test(m))throw Error("Gemini API key không hợp lệ hoặc chưa được cấp quyền.");
- throw Error("Gemini chưa thể xử lý yêu cầu: "+m);
+ const message=error?.message||"Không thể kết nối Gemini."; 
+ if(/quota|rate.?limit|resource_exhausted/i.test(message))throw Error("Gemini đang giới hạn lượt gọi API hoặc đã hết quota.");
+ if(/api.?key|permission|unauthorized|forbidden/i.test(message))throw Error("Gemini API key không hợp lệ hoặc chưa được cấp quyền.");
+ throw Error(message);
 }
 async function askGemini(){
  const prompt=$("#prompt").value.trim();if(!prompt)return;
