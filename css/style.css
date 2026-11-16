@@ -1,0 +1,46 @@
+body{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    background:#f7f8fc;
+    color:#202638
+}
+.navbar{min-height:64px}
+.navbar-brand{letter-spacing:-.03em;color:#4f46e5}
+.nav-link{font-size:.92rem;color:#4b5563}
+.nav-link.active,.nav-link:hover{color:#4f46e5}
+.sidebar{
+    position:fixed;z-index:1050;top:0;right:-300px;width:280px;height:100vh;
+    background:#fff;box-shadow:-8px 0 30px #0001;padding:1.25rem;transition:right .25s
+}
+.sidebar.open{right:0}
+.sidebar a{
+    display:block;text-decoration:none;color:#374151;padding:.8rem;border-radius:.6rem
+}
+.sidebar a:hover{background:#eef2ff;color:#4338ca}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:#0005;z-index:1040}
+.sidebar-backdrop.show{display:block}
+main{flex:1}
+.hero{
+    background:linear-gradient(135deg,#eef2ff,#fdf2f8);border:1px solid #e5e7eb;
+    border-radius:1.25rem;padding:clamp(1.5rem,5vw,3.5rem)
+}
+.app-card{background:white;border:1px solid #e5e7eb;border-radius:1rem;padding:1.25rem}
+.feature-card{height:100%;transition:transform .15s}
+.feature-card:hover{transform:translateY(-3px)}
+.timer{font-size:clamp(3rem,10vw,5rem);font-weight:700;font-variant-numeric:tabular-nums}
+.task-done{text-decoration:line-through;color:#9ca3af}
+.note-area{min-height:260px}
+.footer{font-size:.9rem}
+.chat-log{max-height:480px;overflow:auto}
+.chat-message{padding:1rem;border-radius:.8rem;margin-bottom:.75rem;background:#f3f4f6}
+.chat-message.user{background:#eef2ff}
+.chat-message strong{display:block;margin-bottom:.35rem}
+.toast-notice{
+    position:fixed;bottom:1rem;right:1rem;z-index:1100;background:#212529;color:white;
+    padding:.8rem 1.2rem;border-radius:.75rem;box-shadow:0 5px 25px #0002
+}
+@media(max-width:991px){
+    #topNav{display:none!important}
+    .navbar-brand{margin-right:auto!important}
+}
