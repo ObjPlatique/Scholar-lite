@@ -159,3 +159,8 @@ body {
 
 /* Study Assistant chat history */
 .chat-history-panel{height:100%;min-height:260px}.chat-history-list{display:grid;gap:.5rem;max-height:480px;overflow:auto}.chat-history-item{display:flex;flex-direction:column;gap:.2rem;width:100%;padding:.7rem .8rem;text-align:left;border:1px solid var(--sl-border);border-radius:.65rem;background:var(--sl-surface);color:var(--sl-text)}.chat-history-item:hover,.chat-history-item.active{background:var(--sl-hover);border-color:#818cf8}.chat-history-title{font-size:.9rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.chat-history-item small{color:var(--sl-muted)}
+
+
+/* Live clock and weekly timetable */
+.live-clock-card{background:linear-gradient(135deg,var(--sl-surface),var(--sl-hover));}.live-clock-time{font-size:clamp(2.5rem,7vw,4.25rem);font-weight:750;line-height:1.15;letter-spacing:.02em;font-variant-numeric:tabular-nums;color:var(--sl-text)}
+.schedule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:1rem}.schedule-day{min-height:145px}.schedule-event{padding:.75rem;margin-bottom:.6rem;border:1px solid var(--sl-border);border-left:3px solid var(--bs-primary);border-radius:.65rem;background:var(--sl-surface-soft)}.schedule-event:last-child{margin-bottom:0}
