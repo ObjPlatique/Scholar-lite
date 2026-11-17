@@ -15,6 +15,25 @@ let current="home", user=null, auth=null, db=null, modal=null;
 let tasks=[], note="", chat=[], quiz=null, answers={}, submitted=false;
 let timerSeconds=1500, timerId=null;
 
+const themeStorageKey = "scholar-lite-theme";
+function applyTheme(theme) {
+  const dark = theme === "dark";
+  document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+  const button = $("#themeToggle");
+  if (button) {
+    button.textContent = dark ? "☀" : "☾";
+    button.setAttribute("aria-label", dark ? "Bật giao diện sáng" : "Bật giao diện tối");
+    button.title = dark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối";
+  }
+}
+const savedTheme = localStorage.getItem(themeStorageKey);
+applyTheme(savedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("#themeToggle").addEventListener("click", () => {
+  const nextTheme = document.documentElement.getAttribute("data-bs-theme") === "dark" ? "light" : "dark";
+  localStorage.setItem(themeStorageKey, nextTheme);
+  applyTheme(nextTheme);
+});
+
 const firebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("YOUR_");
 if (firebaseConfigured) {
   const app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app);
