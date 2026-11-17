@@ -16,6 +16,10 @@ Static HTML/CSS/JS app using Bootstrap, Firebase Authentication, Firestore, and 
 5. In Vercel Project Settings → Environment Variables, add `GEMINI_API_KEY` with your Gemini API key, then redeploy.
 6. Open the deployed website and test Study Assistant and Quiz Generator.
 
+## Study Assistant chat history
+
+Chat conversations are stored per signed-in user in the Firestore subcollection `users/{uid}/scholarLite/data/chats`. Users can create, switch between, and delete conversations. The latest 60 messages per conversation are retained in the saved record. Guests can chat for the current session, but their conversations are not synced or saved after leaving/reloading.
+
 ## Markdown and LaTeX
 
 Markdown is rendered in Study Assistant replies, generated quiz questions/options, and the live Note preview. LaTeX supports `$...# Scholar Lite
