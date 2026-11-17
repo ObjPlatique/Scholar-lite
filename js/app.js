@@ -325,6 +325,7 @@ function updateChatLog(){
 async function askGemini(){
  if(isAsking)return;
  const input=$("#prompt"),prompt=input.value.trim();if(!prompt)return;
+ if(!activeChatId) activeChatId=globalThis.crypto?.randomUUID?.()||("chat-"+Date.now()+"-"+Math.random().toString(36).slice(2));
  isAsking=true;
  chat.push({role:"user",text:prompt});
  input.value="";
