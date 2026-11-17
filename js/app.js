@@ -8,11 +8,14 @@ import { firebaseConfig } from "./firebaseConfig.js";
 
 const $ = (s) => document.querySelector(s);
 const content = $("#content");
-const pages = {home:"Trang chủ",assistant:"Trợ lý học tập",quiz:"Tạo câu hỏi",todo:"To-do",pomodoro:"Pomodoro",note:"Note"};
+const pages = {home:"Trang chủ",assistant:"Trợ lý học tập",quiz:"Tạo câu hỏi",todo:"To-do",pomodoro:"Pomodoro",note:"Note",schedule:"Thời gian biểu"};
 const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 let current="home", user=null, auth=null, db=null, modal=null;
 let tasks=[], note="", notes=[], activeNoteId=null, chat=[], chatThreads=[], activeChatId=null, quiz=null, answers={}, submitted=false;
+const weekdayNames=["Thứ Hai","Thứ Ba","Thứ Tư","Thứ Năm","Thứ Sáu","Thứ Bảy","Chủ Nhật"];
+let timetable=[];
+try { const saved=JSON.parse(localStorage.getItem("scholar-lite-timetable")||"[]"); if(Array.isArray(saved)) timetable=saved; } catch {}
 const pomodoroDefaults={focus:25,shortBreak:5,longBreak:15};
 let pomodoroDurations={...pomodoroDefaults};
 try {
@@ -179,7 +182,7 @@ $("#googleBtn").onclick=async()=>{if(!auth){$("#authMessage").textContent="Hãy 
 function render(){
  document.title=pages[current]+" · Scholar Lite";
  document.querySelectorAll("#topNav [data-page]").forEach(a=>a.classList.toggle("active",a.dataset.page===current));
- if(current==="home") content.innerHTML=`<section class="hero mb-4"><p class="text-primary fw-semibold">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1 class="display-5 fw-bold">Học tập gọn nhẹ hơn.</h1><p class="lead text-secondary">Hỏi bài, tạo trắc nghiệm, quản lý công việc, tập trung và ghi chú trong một nơi.</p><button class="btn btn-primary me-2" data-page="assistant">Bắt đầu học</button><button class="btn btn-outline-primary" data-page="todo">Xem To-do</button></section><div class="row g-3">${["assistant","quiz","todo","pomodoro","note"].map(p=>`<div class="col-md-6 col-lg-4"><div class="app-card feature-card"><h5>${pages[p]}</h5><p class="text-secondary">Mở công cụ ${pages[p].toLowerCase()}.</p><button class="btn btn-sm btn-outline-primary" data-page="${p}">Mở công cụ</button></div></div>`).join("")}</div>`;
+ if(current==="home") content.innerHTML=`<section class="hero mb-4"><p class="text-primary fw-semibold">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1 class="display-5 fw-bold">Học tập gọn nhẹ hơn.</h1><p class="lead text-secondary">Hỏi bài, tạo trắc nghiệm, quản lý công việc, tập trung và ghi chú trong một nơi.</p><button class="btn btn-primary me-2" data-page="assistant">Bắt đầu học</button><button class="btn btn-outline-primary" data-page="todo">Xem To-do</button></section><div class="app-card live-clock-card mb-4"><div class="row align-items-center g-3"><div class="col-md-7"><div class="small text-secondary text-uppercase fw-semibold">Ngày và giờ hiện tại</div><div class="live-clock-time" id="homeClock">--:--:--</div><div class="text-secondary" id="homeDate">Đang tải ngày...</div></div><div class="col-md-5 text-md-end"><div class="small text-secondary mb-2">Lịch học của bạn</div><button class="btn btn-outline-primary" data-page="schedule">Mở thời gian biểu →</button></div></div></div><div class="row g-3">${["assistant","quiz","todo","pomodoro","note","schedule"].map(p=>`<div class="col-md-6 col-lg-4"><div class="app-card feature-card"><h5>${pages[p]}</h5><p class="text-secondary">Mở công cụ ${pages[p].toLowerCase()}.</p><button class="btn btn-sm btn-outline-primary" data-page="${p}">Mở công cụ</button></div></div>`).join("")}</div>`;
  if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="row g-3"><div class="col-lg-4"><div class="app-card chat-history-panel"><div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h2 class="h6 mb-0">Lịch sử chat</h2><button class="btn btn-sm btn-primary" id="newChat">＋ Chat mới</button></div><div id="chatHistoryList" class="chat-history-list"></div>${user?"":'<p class="small text-secondary mt-3 mb-0">Đăng nhập để đồng bộ và lưu lịch sử chat trên các thiết bị.</p>'}</div></div><div class="col-lg-8"><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div class="markdown-body">${renderMarkdown(m.text)}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-danger" id="deleteChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div></div></div>`;
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
@@ -207,7 +210,38 @@ function render(){
        </form>
      </div></div>
    </div>`;
- if(current==="note") {
+ if(current==="schedule") {
+    const days=weekdayNames.map((name,day)=>({name,day,items:timetable.filter(item=>Number(item.day)===day).sort((a,b)=>a.start.localeCompare(b.start))}));
+    content.innerHTML=`<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><div><h1 class="h3 mb-1">Thời gian biểu</h1><p class="text-secondary mb-0">Lập kế hoạch học tập theo từng ngày trong tuần.</p></div><span class="badge text-bg-light border">${timetable.length} hoạt động</span></div>
+      <div class="app-card mb-3"><h2 class="h5 mb-3">＋ Thêm hoạt động</h2>
+        <form id="scheduleForm" class="row g-3 align-items-end">
+          <div class="col-md-4"><label class="form-label" for="scheduleTitle">Tên hoạt động</label><input class="form-control" id="scheduleTitle" maxlength="80" placeholder="Ví dụ: Toán THPTQG" required></div>
+          <div class="col-md-2"><label class="form-label" for="scheduleDay">Ngày</label><select class="form-select" id="scheduleDay">${weekdayNames.map((name,index)=>`<option value="${index}">${name}</option>`).join("")}</select></div>
+          <div class="col-6 col-md-2"><label class="form-label" for="scheduleStart">Bắt đầu</label><input class="form-control" type="time" id="scheduleStart" value="08:00" required></div>
+          <div class="col-6 col-md-2"><label class="form-label" for="scheduleEnd">Kết thúc</label><input class="form-control" type="time" id="scheduleEnd" value="09:00" required></div>
+          <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Thêm lịch</button></div>
+        </form>
+      </div>
+      <div class="schedule-grid">${days.map(day=>`<section class="app-card schedule-day"><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h6 mb-0">${day.name}</h2><span class="small text-secondary">${day.items.length} mục</span></div>${day.items.length?day.items.map(item=>`<div class="schedule-event"><div class="d-flex justify-content-between align-items-start gap-2"><div class="min-w-0"><div class="fw-semibold">${esc(item.title)}</div><div class="small text-secondary">${esc(item.start)} – ${esc(item.end)}</div></div><button class="btn btn-sm btn-outline-danger schedule-delete" data-id="${esc(item.id)}" aria-label="Xóa ${esc(item.title)}">×</button></div></div>`).join(""):'<p class="small text-secondary mb-0">Chưa có hoạt động.</p>'}</section>`).join("")}</div>
+      <p class="small text-secondary mt-3">Thời gian biểu được lưu trên trình duyệt hiện tại.</p>`;
+  }
+  if(current==="schedule"){
+    $("#scheduleForm").onsubmit=e=>{
+      e.preventDefault();
+      const title=$("#scheduleTitle").value.trim(),day=Number($("#scheduleDay").value),start=$("#scheduleStart").value,end=$("#scheduleEnd").value;
+      if(!title){toast("Vui lòng nhập tên hoạt động.");return;}
+      if(!start||!end||end<=start){toast("Giờ kết thúc phải sau giờ bắt đầu.");return;}
+      timetable.push({id:globalThis.crypto?.randomUUID?.()||("event-"+Date.now()+"-"+Math.random().toString(36).slice(2)),title,day,start,end});
+      localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+      render();toast("Đã thêm hoạt động vào thời gian biểu.");
+    };
+    document.querySelectorAll(".schedule-delete").forEach(button=>button.onclick=()=>{
+      timetable=timetable.filter(item=>item.id!==button.dataset.id);
+      localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+      render();toast("Đã xóa hoạt động.");
+    });
+  }
+  if(current==="note") {
    const activeNote=notes.find(item=>item.id===activeNoteId)||null;
    content.innerHTML=`<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><div><h1 class="h3 mb-1">Ghi chú</h1><p class="text-secondary mb-0 small">${notes.length} ghi chú</p></div><button class="btn btn-primary" id="addNote">＋ Thêm note</button></div>
    <div class="row g-3">
@@ -314,6 +348,14 @@ function createNote(){
   render();
   $("#noteTitle")?.focus();
 }
+function updateHomeClock(){
+  const clock=$("#homeClock"),date=$("#homeDate");
+  if(!clock||!date)return;
+  const now=new Date();
+  clock.textContent=new Intl.DateTimeFormat("vi-VN",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(now);
+  date.textContent=new Intl.DateTimeFormat("vi-VN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).format(now);
+}
+setInterval(updateHomeClock,1000);
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 function pomodoroModeLabel(mode){
   return ({focus:"Thời gian tập trung",shortBreak:"Thời gian nghỉ ngắn",longBreak:"Thời gian nghỉ dài"})[mode]||"Pomodoro";
@@ -448,3 +490,4 @@ function renderQuiz(){
  if(submitted)$("#newQuiz").onclick=()=>{quiz=null;render();};
 }
 render();
+updateHomeClock();
