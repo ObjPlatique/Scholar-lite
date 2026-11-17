@@ -127,3 +127,27 @@ body {
     background: #1e3a5f;
     border-color: #31577e;
 }
+
+
+/* Multiple notes */
+.note-list-item {
+    display: block;
+    width: 100%;
+    padding: .75rem;
+    border: 1px solid var(--sl-border, #e5e7eb);
+    border-radius: .7rem;
+    background: var(--sl-surface, #fff);
+    color: var(--sl-text, #202638);
+    transition: background-color .15s, border-color .15s;
+}
+.note-list-item:hover,
+.note-list-item.active {
+    background: var(--sl-hover, #eef2ff);
+    border-color: #818cf8;
+}
+.note-preview {
+    display: block;
+    margin-top: .25rem;
+    color: var(--sl-muted, #6b7280);
+    overflow-wrap: anywhere;
+}
