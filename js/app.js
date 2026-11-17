@@ -12,7 +12,7 @@ const pages = {home:"Trang chủ",assistant:"Trợ lý học tập",quiz:"Tạo 
 const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 let current="home", user=null, auth=null, db=null, modal=null;
-let tasks=[], note="", chat=[], quiz=null, answers={}, submitted=false;
+let tasks=[], note="", notes=[], activeNoteId=null, chat=[], quiz=null, answers={}, submitted=false;
 let timerSeconds=1500, timerId=null;
 
 const themeStorageKey = "scholar-lite-theme";
@@ -43,12 +43,31 @@ function updateAuth(){ $("#authBtn").textContent=user?(user.displayName||user.em
 function toast(s){ const el=$("#notice"); el.textContent=s; el.classList.remove("d-none"); setTimeout(()=>el.classList.add("d-none"),3000); }
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 async function loadData(){
-  try { const snap=await getDoc(doc(db,"users",user.uid,"scholarLite","data")); if(snap.exists()){const d=snap.data();tasks=d.tasks||[];note=d.note||"";} }
+  try {
+    const snap=await getDoc(doc(db,"users",user.uid,"scholarLite","data"));
+    if(snap.exists()){
+      const d=snap.data();
+      tasks=d.tasks||[];
+      note=d.note||"";
+      if(Array.isArray(d.notes)){
+        notes=d.notes.map((item,index)=>({
+          id:item.id||("note-"+index),
+          title:item.title||"Ghi chú không có tiêu đề",
+          content:item.content||"",
+          updatedAt:item.updatedAt||""
+        }));
+      } else if(note.trim()) {
+        // Migrate the previous single-note field without losing its content.
+        notes=[{id:"legacy-note",title:"Ghi chú của tôi",content:note,updatedAt:""}];
+      }
+      activeNoteId=notes[0]?.id||null;
+    }
+  }
   catch(e){console.warn(e);toast("Không thể tải dữ liệu Firebase.");}
 }
 async function saveData(){
   if(!user||!db)return;
-  try{await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,updatedAt:new Date().toISOString()},{merge:true});}
+  try{await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,notes,updatedAt:new Date().toISOString()},{merge:true});}
   catch(e){toast("Không lưu được dữ liệu: "+e.message);}
 }
 function go(p){if(!pages[p])return;current=p;closeSidebar();render();scrollTo({top:0,behavior:"smooth"});}
@@ -71,7 +90,18 @@ function render(){
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
  if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1><div class="app-card text-center"><div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div><button class="btn btn-primary" id="timerStart">Bắt đầu</button> <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button><p class="text-muted mt-3">Phiên tập trung 25 phút</p></div>`;
- if(current==="note") content.innerHTML=`<h1 class="h3 mb-3">Note</h1><div class="app-card"><textarea id="noteArea" class="form-control note-area mb-3" placeholder="Ghi chú của bạn...">${esc(note)}</textarea><button class="btn btn-primary" id="saveNote">Lưu ghi chú</button></div>`;
+ if(current==="note") {
+   const activeNote=notes.find(item=>item.id===activeNoteId)||null;
+   content.innerHTML=`<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><div><h1 class="h3 mb-1">Ghi chú</h1><p class="text-secondary mb-0 small">${notes.length} ghi chú</p></div><button class="btn btn-primary" id="addNote">＋ Thêm note</button></div>
+   <div class="row g-3">
+     <div class="col-md-4 col-lg-3"><div class="app-card h-100"><h2 class="h6 mb-3">Danh sách note</h2><div id="noteList" class="d-grid gap-2">${notes.length?notes.map(item=>`<button type="button" class="note-list-item text-start ${item.id===activeNoteId?"active":""}" data-note-id="${esc(item.id)}"><span class="d-block fw-semibold text-truncate">${esc(item.title||"Chưa đặt tiêu đề")}</span><small class="note-preview">${esc(item.content||"Chưa có nội dung").slice(0,65)}</small></button>`).join(""):'<p class="text-secondary small mb-0">Chưa có ghi chú. Hãy tạo note đầu tiên.</p>'}</div></div></div>
+     <div class="col-md-8 col-lg-9"><div class="app-card">
+       ${activeNote? `<label class="form-label" for="noteTitle">Tiêu đề</label><input id="noteTitle" class="form-control mb-3" maxlength="100" value="${esc(activeNote.title)}" placeholder="Tên ghi chú">
+       <label class="form-label" for="noteArea">Nội dung</label><textarea id="noteArea" class="form-control note-area mb-3" placeholder="Viết ghi chú của bạn...">${esc(activeNote.content)}</textarea>
+       <div class="d-flex flex-wrap gap-2"><button class="btn btn-primary" id="saveNote">Lưu ghi chú</button><button class="btn btn-outline-danger" id="deleteNote">Xóa note</button></div>`:'<div class="text-center py-5"><p class="text-secondary mb-3">Chọn một ghi chú hoặc tạo note mới để bắt đầu.</p><button class="btn btn-primary" id="emptyAddNote">＋ Tạo note đầu tiên</button></div>'}
+     </div></div>
+   </div>`;
+ }
  if(current==="assistant"){
    $("#askBtn").onclick=askGemini; $("#prompt").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();askGemini();}};
    $("#clearChat").onclick=()=>{chat=[];render();};
@@ -82,12 +112,49 @@ function render(){
    document.querySelectorAll(".task-check").forEach(el=>el.onchange=()=>{tasks[Number(el.dataset.i)].done=el.checked;saveData();render();});
    document.querySelectorAll(".task-del").forEach(el=>el.onclick=()=>{tasks.splice(Number(el.dataset.i),1);saveData();render();});
  }
- if(current==="note") $("#saveNote").onclick=()=>{note=$("#noteArea").value;saveData();toast("Đã lưu ghi chú.");};
+ if(current==="note") {
+   $("#addNote").onclick=()=>createNote();
+   $("#emptyAddNote")?.addEventListener("click",()=>createNote());
+   document.querySelectorAll("[data-note-id]").forEach(button=>button.onclick=()=>{
+     activeNoteId=button.dataset.noteId;
+     render();
+   });
+   if($("#saveNote")) $("#saveNote").onclick=()=>{
+     const selected=notes.find(item=>item.id===activeNoteId);
+     if(!selected)return;
+     selected.title=$("#noteTitle").value.trim()||"Chưa đặt tiêu đề";
+     selected.content=$("#noteArea").value;
+     selected.updatedAt=new Date().toISOString();
+     note=selected.content;
+     saveData();
+     toast("Đã lưu ghi chú.");
+     render();
+   };
+   if($("#deleteNote")) $("#deleteNote").onclick=()=>{
+     if(!confirm("Bạn có chắc muốn xóa ghi chú này?"))return;
+     notes=notes.filter(item=>item.id!==activeNoteId);
+     activeNoteId=notes[0]?.id||null;
+     note=notes.find(item=>item.id===activeNoteId)?.content||"";
+     saveData();
+     render();
+     toast("Đã xóa ghi chú.");
+   };
+ }
  if(current==="pomodoro"){
    $("#timerStart").onclick=()=>{if(timerId){clearInterval(timerId);timerId=null;$("#timerStart").textContent="Tiếp tục";return;}$("#timerStart").textContent="Tạm dừng";timerId=setInterval(()=>{timerSeconds=Math.max(0,timerSeconds-1);$("#timerDisplay").textContent=formatTime(timerSeconds);if(!timerSeconds){clearInterval(timerId);timerId=null;toast("Hoàn thành phiên Pomodoro!");$("#timerStart").textContent="Bắt đầu";}},1000);};
    $("#timerReset").onclick=()=>{clearInterval(timerId);timerId=null;timerSeconds=1500;$("#timerDisplay").textContent=formatTime(timerSeconds);$("#timerStart").textContent="Bắt đầu";};
  }
  if(current==="quiz"&&quiz) renderQuiz();
+}
+function createNote(){
+  const id=(globalThis.crypto?.randomUUID?.()||("note-"+Date.now()+"-"+Math.random().toString(36).slice(2)));
+  const item={id,title:"Ghi chú mới",content:"",updatedAt:new Date().toISOString()};
+  notes.unshift(item);
+  activeNoteId=id;
+  note="";
+  saveData();
+  render();
+  $("#noteTitle")?.focus();
 }
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
 let isAsking = false;
