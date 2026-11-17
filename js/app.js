@@ -259,7 +259,7 @@ function render(){
       <p class="small text-secondary mt-3">${user?"Thời gian biểu được đồng bộ với tài khoản Firebase của bạn.":"Lịch hiện được lưu trên thiết bị này. Đăng nhập để đồng bộ giữa các thiết bị."}</p>`;
   }
   if(current==="schedule"){
-    $("#scheduleForm").onsubmit=e=>{
+    $("#scheduleForm").onsubmit=async e=>{
       e.preventDefault();
       const title=$("#scheduleTitle").value.trim(),day=Number($("#scheduleDay").value),start=$("#scheduleStart").value,end=$("#scheduleEnd").value;
       if(!title){toast("Vui lòng nhập tên hoạt động.");return;}
@@ -270,7 +270,7 @@ function render(){
       if(user&&db) { const saved=await saveData(); if(saved) toast("Đã thêm và đồng bộ hoạt động lên Firebase."); }
       else toast("Đã thêm hoạt động trên thiết bị. Đăng nhập để đồng bộ Firebase.");
     };
-    document.querySelectorAll(".schedule-delete").forEach(button=>button.onclick=()=>{
+    document.querySelectorAll(".schedule-delete").forEach(button=>button.onclick=async()=>{
       timetable=timetable.filter(item=>item.id!==button.dataset.id);
       localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
       render();
