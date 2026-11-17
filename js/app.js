@@ -3,7 +3,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from "./firebaseConfig.js";
 
 const $ = (s) => document.querySelector(s);
@@ -12,7 +12,7 @@ const pages = {home:"Trang chủ",assistant:"Trợ lý học tập",quiz:"Tạo 
 const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 let current="home", user=null, auth=null, db=null, modal=null;
-let tasks=[], note="", notes=[], activeNoteId=null, chat=[], quiz=null, answers={}, submitted=false;
+let tasks=[], note="", notes=[], activeNoteId=null, chat=[], chatThreads=[], activeChatId=null, quiz=null, answers={}, submitted=false;
 let timerSeconds=1500, timerId=null;
 
 const themeStorageKey = "scholar-lite-theme";
@@ -37,7 +37,7 @@ $("#themeToggle").addEventListener("click", () => {
 const firebaseConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("YOUR_");
 if (firebaseConfigured) {
   const app=initializeApp(firebaseConfig); auth=getAuth(app); db=getFirestore(app);
-  onAuthStateChanged(auth, async (u)=>{ user=u; updateAuth(); if(user) await loadData(); render(); });
+  onAuthStateChanged(auth, async (u)=>{ user=u; updateAuth(); if(user){await loadData();await loadChatHistory();}else{chatThreads=[];activeChatId=null;chat=[];} render(); });
 }
 function updateAuth(){ $("#authBtn").textContent=user?(user.displayName||user.email||"Tài khoản"):"Đăng nhập"; }
 function toast(s){ const el=$("#notice"); el.textContent=s; el.classList.remove("d-none"); setTimeout(()=>el.classList.add("d-none"),3000); }
@@ -83,6 +83,78 @@ async function saveData(){
   try{await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,notes,updatedAt:new Date().toISOString()},{merge:true});}
   catch(e){toast("Không lưu được dữ liệu: "+e.message);}
 }
+
+function chatCollectionRef(){
+  return collection(db,"users",user.uid,"scholarLite","data","chats");
+}
+async function loadChatHistory(){
+  if(!user||!db)return;
+  try{
+    const snapshot=await getDocs(chatCollectionRef());
+    chatThreads=snapshot.docs.map(item=>({id:item.id,...item.data()}))
+      .sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
+    const selected=chatThreads.find(item=>item.id===activeChatId)||chatThreads[0]||null;
+    activeChatId=selected?.id||null;
+    chat=selected?.messages||[];
+  }catch(e){
+    console.warn(e);
+    toast("Không thể tải lịch sử trò chuyện.");
+  }
+}
+async function persistCurrentChat(){
+  if(!user||!db||!activeChatId||!chat.length)return;
+  const existing=chatThreads.find(item=>item.id===activeChatId);
+  const firstUser=chat.find(item=>item.role==="user");
+  const title=existing?.title||((firstUser?.text||"Cuộc trò chuyện mới").replace(/\s+/g," ").slice(0,48));
+  const updatedAt=new Date().toISOString();
+  const record={title,messages:chat.slice(-60),updatedAt};
+  try{
+    await setDoc(doc(chatCollectionRef(),activeChatId),record,{merge:true});
+    const index=chatThreads.findIndex(item=>item.id===activeChatId);
+    const entry={id:activeChatId,...record};
+    if(index>=0)chatThreads[index]=entry;else chatThreads.unshift(entry);
+    chatThreads.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
+    updateChatHistoryList();
+  }catch(e){
+    console.warn(e);
+    toast("Không lưu được lịch sử chat: "+e.message);
+  }
+}
+function createChat(){
+  const id=globalThis.crypto?.randomUUID?.()||("chat-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+  activeChatId=id;
+  chat=[];
+  render();
+  $("#prompt")?.focus();
+}
+async function selectChat(id){
+  const selected=chatThreads.find(item=>item.id===id);
+  if(!selected)return;
+  activeChatId=id;
+  chat=Array.isArray(selected.messages)?selected.messages:[];
+  render();
+}
+async function deleteCurrentChat(){
+  if(!activeChatId||!confirm("Xóa cuộc trò chuyện này?"))return;
+  const id=activeChatId;
+  if(user&&db){
+    try{await deleteDoc(doc(chatCollectionRef(),id));}
+    catch(e){toast("Không thể xóa cuộc trò chuyện: "+e.message);return;}
+  }
+  chatThreads=chatThreads.filter(item=>item.id!==id);
+  const next=chatThreads[0]||null;
+  activeChatId=next?.id||null;
+  chat=next?.messages||[];
+  render();
+  toast("Đã xóa cuộc trò chuyện.");
+}
+function updateChatHistoryList(){
+  const list=$("#chatHistoryList");
+  if(!list)return;
+  list.innerHTML=chatThreads.length?chatThreads.map(item=>`<button type="button" class="chat-history-item ${item.id===activeChatId?"active":""}" data-chat-id="${esc(item.id)}"><span class="chat-history-title">${esc(item.title||"Cuộc trò chuyện")}</span><small>${esc((item.updatedAt||"").slice(0,16).replace("T"," "))}</small></button>`).join(""):'<p class="small text-secondary mb-0">Chưa có lịch sử chat.</p>';
+  list.querySelectorAll("[data-chat-id]").forEach(button=>button.onclick=()=>selectChat(button.dataset.chatId));
+}
+
 function go(p){if(!pages[p])return;current=p;closeSidebar();render();scrollTo({top:0,behavior:"smooth"});}
 function closeSidebar(){$("#sidebar").classList.remove("open");$("#backdrop").classList.remove("show");}
 document.addEventListener("click",e=>{const a=e.target.closest("[data-page]");if(a){e.preventDefault();go(a.dataset.page);}});
@@ -99,7 +171,7 @@ function render(){
  document.title=pages[current]+" · Scholar Lite";
  document.querySelectorAll("#topNav [data-page]").forEach(a=>a.classList.toggle("active",a.dataset.page===current));
  if(current==="home") content.innerHTML=`<section class="hero mb-4"><p class="text-primary fw-semibold">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1 class="display-5 fw-bold">Học tập gọn nhẹ hơn.</h1><p class="lead text-secondary">Hỏi bài, tạo trắc nghiệm, quản lý công việc, tập trung và ghi chú trong một nơi.</p><button class="btn btn-primary me-2" data-page="assistant">Bắt đầu học</button><button class="btn btn-outline-primary" data-page="todo">Xem To-do</button></section><div class="row g-3">${["assistant","quiz","todo","pomodoro","note"].map(p=>`<div class="col-md-6 col-lg-4"><div class="app-card feature-card"><h5>${pages[p]}</h5><p class="text-secondary">Mở công cụ ${pages[p].toLowerCase()}.</p><button class="btn btn-sm btn-outline-primary" data-page="${p}">Mở công cụ</button></div></div>`).join("")}</div>`;
- if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div class="markdown-body">${renderMarkdown(m.text)}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-secondary" id="clearChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div>`;
+ if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="row g-3"><div class="col-lg-4"><div class="app-card chat-history-panel"><div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h2 class="h6 mb-0">Lịch sử chat</h2><button class="btn btn-sm btn-primary" id="newChat">＋ Chat mới</button></div><div id="chatHistoryList" class="chat-history-list"></div>${user?"":'<p class="small text-secondary mt-3 mb-0">Đăng nhập để đồng bộ và lưu lịch sử chat trên các thiết bị.</p>'}</div></div><div class="col-lg-8"><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div class="markdown-body">${renderMarkdown(m.text)}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-danger" id="deleteChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div></div></div>`;
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
  if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1><div class="app-card text-center"><div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div><button class="btn btn-primary" id="timerStart">Bắt đầu</button> <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button><p class="text-muted mt-3">Phiên tập trung 25 phút</p></div>`;
@@ -117,8 +189,10 @@ function render(){
    </div>`;
  }
  if(current==="assistant"){
+   updateChatHistoryList();
+   $("#newChat").onclick=createChat;
    $("#askBtn").onclick=askGemini; $("#prompt").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();askGemini();}};
-   $("#clearChat").onclick=()=>{chat=[];render();};
+   $("#deleteChat").onclick=deleteCurrentChat;
  }
  if(current==="quiz") $("#generate").onclick=generateQuiz;
  if(current==="todo"){
@@ -269,6 +343,7 @@ async function askGemini(){
   updateChatLog();
  }finally{
   isAsking=false;
+  await persistCurrentChat();
   render();
  }
 }
