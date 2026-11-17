@@ -42,6 +42,19 @@ if (firebaseConfigured) {
 function updateAuth(){ $("#authBtn").textContent=user?(user.displayName||user.email||"Tài khoản"):"Đăng nhập"; }
 function toast(s){ const el=$("#notice"); el.textContent=s; el.classList.remove("d-none"); setTimeout(()=>el.classList.add("d-none"),3000); }
 function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function renderMarkdown(source) {
+  const raw = String(source ?? "");
+  const html = window.marked ? marked.parse(raw, { gfm: true, breaks: true }) : esc(raw).replaceAll("\n", "<br>");
+  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+}
+function renderMath(root) {
+  if (!root || !window.renderMathInElement) return;
+  renderMathInElement(root, {delimiters:[
+    {left:"$",right:"$",display:true}, {left:"\\[",right:"\\]",display:true},
+    {left:"$",right:"$",display:false}, {left:"\\(",right:"\\)",display:false}
+  ],throwOnError:false,strict:"ignore"});
+}
+
 async function loadData(){
   try {
     const snap=await getDoc(doc(db,"users",user.uid,"scholarLite","data"));
@@ -86,7 +99,7 @@ function render(){
  document.title=pages[current]+" · Scholar Lite";
  document.querySelectorAll("#topNav [data-page]").forEach(a=>a.classList.toggle("active",a.dataset.page===current));
  if(current==="home") content.innerHTML=`<section class="hero mb-4"><p class="text-primary fw-semibold">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1 class="display-5 fw-bold">Học tập gọn nhẹ hơn.</h1><p class="lead text-secondary">Hỏi bài, tạo trắc nghiệm, quản lý công việc, tập trung và ghi chú trong một nơi.</p><button class="btn btn-primary me-2" data-page="assistant">Bắt đầu học</button><button class="btn btn-outline-primary" data-page="todo">Xem To-do</button></section><div class="row g-3">${["assistant","quiz","todo","pomodoro","note"].map(p=>`<div class="col-md-6 col-lg-4"><div class="app-card feature-card"><h5>${pages[p]}</h5><p class="text-secondary">Mở công cụ ${pages[p].toLowerCase()}.</p><button class="btn btn-sm btn-outline-primary" data-page="${p}">Mở công cụ</button></div></div>`).join("")}</div>`;
- if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div>${esc(m.text).replace(/\n/g,"<br>")}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-secondary" id="clearChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div>`;
+ if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div class="markdown-body">${renderMarkdown(m.text)}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-secondary" id="clearChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div>`;
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
  if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1><div class="app-card text-center"><div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div><button class="btn btn-primary" id="timerStart">Bắt đầu</button> <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button><p class="text-muted mt-3">Phiên tập trung 25 phút</p></div>`;
@@ -97,7 +110,8 @@ function render(){
      <div class="col-md-4 col-lg-3"><div class="app-card h-100"><h2 class="h6 mb-3">Danh sách note</h2><div id="noteList" class="d-grid gap-2">${notes.length?notes.map(item=>`<button type="button" class="note-list-item text-start ${item.id===activeNoteId?"active":""}" data-note-id="${esc(item.id)}"><span class="d-block fw-semibold text-truncate">${esc(item.title||"Chưa đặt tiêu đề")}</span><small class="note-preview">${esc(item.content||"Chưa có nội dung").slice(0,65)}</small></button>`).join(""):'<p class="text-secondary small mb-0">Chưa có ghi chú. Hãy tạo note đầu tiên.</p>'}</div></div></div>
      <div class="col-md-8 col-lg-9"><div class="app-card">
        ${activeNote? `<label class="form-label" for="noteTitle">Tiêu đề</label><input id="noteTitle" class="form-control mb-3" maxlength="100" value="${esc(activeNote.title)}" placeholder="Tên ghi chú">
-       <label class="form-label" for="noteArea">Nội dung</label><textarea id="noteArea" class="form-control note-area mb-3" placeholder="Viết ghi chú của bạn...">${esc(activeNote.content)}</textarea>
+       <label class="form-label" for="noteArea">Nội dung</label><textarea id="noteArea" class="form-control note-area mb-3" placeholder="Viết ghi chú bằng Markdown và LaTeX...">${esc(activeNote.content)}</textarea>
+       <div class="note-preview-panel mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><strong class="small">Xem trước</strong><span class="small text-secondary">Markdown · LaTeX</span></div><div id="notePreview" class="markdown-body"></div></div>
        <div class="d-flex flex-wrap gap-2"><button class="btn btn-primary" id="saveNote">Lưu ghi chú</button><button class="btn btn-outline-danger" id="deleteNote">Xóa note</button></div>`:'<div class="text-center py-5"><p class="text-secondary mb-3">Chọn một ghi chú hoặc tạo note mới để bắt đầu.</p><button class="btn btn-primary" id="emptyAddNote">＋ Tạo note đầu tiên</button></div>'}
      </div></div>
    </div>`;
@@ -119,6 +133,7 @@ function render(){
      activeNoteId=button.dataset.noteId;
      render();
    });
+   if($("#noteArea")) { const updateNotePreview=()=>{ const preview=$("#notePreview"); if(preview){preview.innerHTML=renderMarkdown($("#noteArea").value);renderMath(preview);} }; updateNotePreview(); $("#noteArea").addEventListener("input",updateNotePreview); }
    if($("#saveNote")) $("#saveNote").onclick=()=>{
      const selected=notes.find(item=>item.id===activeNoteId);
      if(!selected)return;
@@ -230,6 +245,7 @@ function updateChatLog(){
  const log=$("#chatLog");
  if(!log)return;
  log.innerHTML=chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div>${esc(m.text).replace(/\n/g,"<br>")}</div></div>`).join("");
+ renderMath(log);
  log.scrollTop=log.scrollHeight;
 }
 async function askGemini(){
@@ -270,7 +286,8 @@ async function generateQuiz(){
 }
 function renderQuiz(){
  const area=$("#quizArea");if(!area||!quiz)return;
- area.innerHTML=`<div class="app-card"><h2 class="h5">${esc(quiz.title||"Bộ câu hỏi")}</h2>${quiz.questions.map((q,i)=>`<div class="border-top py-3"><p><strong>${i+1}. ${esc(q.question)}</strong></p>${q.options.map((o,j)=>`<label class="d-block mb-2"><input type="radio" name="q${i}" value="${j}" ${answers[i]===j?"checked":""} ${submitted?"disabled":""}> ${esc(o)} ${submitted&&j===q.answer?'<span class="text-success">✓ Đáp án</span>':""}</label>`).join("")}${submitted?'<p class="small text-secondary">'+esc(q.explanation||"")+'</p>':""}</div>`).join("")}<button class="btn btn-primary" id="submitQuiz" ${submitted?"disabled":""}>Nộp bài</button>${submitted?`<div class="alert alert-info mt-3">Điểm: ${quiz.questions.filter((q,i)=>answers[i]===q.answer).length}/${quiz.questions.length}</div><button class="btn btn-outline-primary" id="newQuiz">Tạo bộ khác</button>`:""}</div>`;
+ area.innerHTML=`<div class="app-card"><h2 class="h5">${esc(quiz.title||"Bộ câu hỏi")}</h2>${quiz.questions.map((q,i)=>`<div class="border-top py-3"><div class="markdown-body mb-2"><strong>${i+1}. ${renderMarkdown(q.question)}</strong></div>${q.options.map((o,j)=>`<label class="d-block mb-2"><input type="radio" name="q${i}" value="${j}" ${answers[i]===j?"checked":""} ${submitted?"disabled":""}> <span class="markdown-body d-inline">${renderMarkdown(o)}</span> ${submitted&&j===q.answer?'<span class="text-success">✓ Đáp án</span>':""}</label>`).join("")}${submitted?'<p class="small text-secondary">'+esc(q.explanation||"")+'</p>':""}</div>`).join("")}<button class="btn btn-primary" id="submitQuiz" ${submitted?"disabled":""}>Nộp bài</button>${submitted?`<div class="alert alert-info mt-3">Điểm: ${quiz.questions.filter((q,i)=>answers[i]===q.answer).length}/${quiz.questions.length}</div><button class="btn btn-outline-primary" id="newQuiz">Tạo bộ khác</button>`:""}</div>`;
+ renderMath(area);
  quiz.questions.forEach((q,i)=>area.querySelectorAll(`input[name="q${i}"]`).forEach(r=>r.onchange=()=>answers[i]=Number(r.value)));
  $("#submitQuiz").onclick=()=>{if(Object.keys(answers).length!==quiz.questions.length){toast("Hãy trả lời tất cả câu hỏi.");return;}submitted=true;renderQuiz();};
  if(submitted)$("#newQuiz").onclick=()=>{quiz=null;render();};
