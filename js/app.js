@@ -171,7 +171,7 @@ $("#sidebarToggle").onclick=()=>{$("#sidebar").classList.add("open");$("#backdro
 $("#sidebarClose").onclick=closeSidebar; $("#backdrop").onclick=closeSidebar;
 function openAuth(){if(!modal)modal=new bootstrap.Modal($("#authModal"));modal.show();}
 $("#authBtn").onclick=()=>{if(user){signOut(auth);}else openAuth();};
-$("#settingsBtn").onclick=()=>user?toast("Đã đăng nhập: "+(user.email||"")):openAuth();
+
 $("#emailForm").onsubmit=async e=>{e.preventDefault();if(!auth){$("#authMessage").textContent="Hãy cấu hình Firebase trước.";return;}try{await signInWithEmailAndPassword(auth,$("#email").value.trim(),$("#password").value);modal.hide();}catch(x){$("#authMessage").textContent=x.message;}};
 $("#registerBtn").onclick=async()=>{if(!auth){$("#authMessage").textContent="Hãy cấu hình Firebase trước.";return;}try{await createUserWithEmailAndPassword(auth,$("#email").value.trim(),$("#password").value);modal.hide();}catch(x){$("#authMessage").textContent=x.message;}};
 $("#googleBtn").onclick=async()=>{if(!auth){$("#authMessage").textContent="Hãy cấu hình Firebase trước.";return;}try{await signInWithPopup(auth,new GoogleAuthProvider());modal.hide();}catch(x){$("#authMessage").textContent=x.message;}};
