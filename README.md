@@ -16,6 +16,12 @@ Static HTML/CSS/JS app using Bootstrap, Firebase Authentication, Firestore, and 
 5. In Vercel Project Settings → Environment Variables, add `GEMINI_API_KEY` with your Gemini API key, then redeploy.
 6. Open the deployed website and test Study Assistant and Quiz Generator.
 
+## Timetable synchronization
+
+The weekly timetable is stored in the signed-in user's Firestore document at `users/{uid}/scholarLite/data`, in the `timetable` field. When a user signs in, the app loads that account's timetable; adding or deleting an activity saves the updated list. Existing browser-only timetable data is migrated when the account does not yet have a timetable. Signed-out users continue to use local browser storage.
+
+The Firestore rules in the Setup section must allow each authenticated user to read and write their own `users/{uid}/scholarLite/**` documents. The example recursive rule already covers the timetable field because it is stored in the existing `data` document.
+
 ## Study Assistant chat history
 
 Chat conversations are stored per signed-in user in the Firestore subcollection `users/{uid}/scholarLite/data/chats`. Users can create, switch between, and delete conversations. The latest 60 messages per conversation are retained in the saved record. Guests can chat for the current session, but their conversations are not synced or saved after leaving/reloading.
