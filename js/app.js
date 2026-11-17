@@ -13,7 +13,16 @@ const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 let current="home", user=null, auth=null, db=null, modal=null;
 let tasks=[], note="", notes=[], activeNoteId=null, chat=[], chatThreads=[], activeChatId=null, quiz=null, answers={}, submitted=false;
-let timerSeconds=1500, timerId=null;
+const pomodoroDefaults={focus:25,shortBreak:5,longBreak:15};
+let pomodoroDurations={...pomodoroDefaults};
+try {
+  const storedPomodoro=JSON.parse(localStorage.getItem("scholar-lite-pomodoro")||"null");
+  if(storedPomodoro) for(const key of Object.keys(pomodoroDefaults)) {
+    const value=Number(storedPomodoro[key]);
+    if(Number.isInteger(value)&&value>=1&&value<=180) pomodoroDurations[key]=value;
+  }
+} catch {}
+let timerMode="focus", timerSeconds=pomodoroDurations.focus*60, timerId=null;
 
 const themeStorageKey = "scholar-lite-theme";
 function applyTheme(theme) {
@@ -174,7 +183,30 @@ function render(){
  if(current==="assistant") content.innerHTML=`<h1 class="h3 mb-3">Trợ lý học tập</h1><div class="row g-3"><div class="col-lg-4"><div class="app-card chat-history-panel"><div class="d-flex justify-content-between align-items-center gap-2 mb-3"><h2 class="h6 mb-0">Lịch sử chat</h2><button class="btn btn-sm btn-primary" id="newChat">＋ Chat mới</button></div><div id="chatHistoryList" class="chat-history-list"></div>${user?"":'<p class="small text-secondary mt-3 mb-0">Đăng nhập để đồng bộ và lưu lịch sử chat trên các thiết bị.</p>'}</div></div><div class="col-lg-8"><div class="app-card"><div id="chatLog" class="chat-log mb-3">${chat.map(m=>`<div class="chat-message ${m.role}"><strong>${m.role==="user"?"Bạn":"Gemini"}</strong><div class="markdown-body">${renderMarkdown(m.text)}</div></div>`).join("")}</div><textarea id="prompt" class="form-control mb-3" rows="4" placeholder="Nhập câu hỏi hoặc nội dung bài học..."></textarea><button class="btn btn-primary" id="askBtn">Gửi câu hỏi</button> <button class="btn btn-outline-danger" id="deleteChat">Xóa hội thoại</button><p class="small text-muted mt-3">Phản hồi được hiển thị dần khi Gemini tạo nội dung.</p></div></div></div>`;
  if(current==="quiz") content.innerHTML=`<h1 class="h3 mb-3">Tạo câu hỏi</h1><div class="app-card mb-3"><div class="row g-3"><div class="col-md-6"><label class="form-label">Môn học *</label><input id="subject" class="form-control" placeholder="Toán, Vật lý, Tiếng Anh..."></div><div class="col-md-6"><label class="form-label">Chủ đề</label><input id="topic" class="form-control" placeholder="Hàm số, Dao động..."></div><div class="col-md-6"><label class="form-label">Số câu</label><select id="count" class="form-select"><option>5</option><option>10</option><option>15</option></select></div><div class="col-md-6"><label class="form-label">Độ khó</label><select id="difficulty" class="form-select"><option>Dễ</option><option selected>Trung bình</option><option>Khó</option></select></div></div><button class="btn btn-primary mt-3" id="generate">Tạo quiz</button><div id="quizError" class="text-danger small mt-2"></div></div><div id="quizArea"></div>`;
  if(current==="todo") content.innerHTML=`<h1 class="h3 mb-3">To-do</h1><div class="app-card"><form id="taskForm" class="d-flex gap-2 mb-3"><input id="taskInput" class="form-control" placeholder="Thêm công việc..." required><button class="btn btn-primary">Thêm</button></form><ul class="list-group">${tasks.map((t,i)=>`<li class="list-group-item d-flex align-items-center gap-2"><input class="form-check-input task-check" type="checkbox" data-i="${i}" ${t.done?"checked":""}><span class="flex-grow-1 ${t.done?"task-done":""}">${esc(t.text)}</span><button class="btn btn-sm btn-outline-danger task-del" data-i="${i}">Xóa</button></li>`).join("")}</ul></div>`;
- if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1><div class="app-card text-center"><div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div><button class="btn btn-primary" id="timerStart">Bắt đầu</button> <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button><p class="text-muted mt-3">Phiên tập trung 25 phút</p></div>`;
+ if(current==="pomodoro") content.innerHTML=`<h1 class="h3 mb-3">Pomodoro</h1>
+   <div class="row g-3">
+     <div class="col-lg-7"><div class="app-card text-center h-100">
+       <div class="btn-group flex-wrap mb-4" role="group" aria-label="Chọn chế độ Pomodoro">
+         <button class="btn ${timerMode==="focus"?"btn-primary":"btn-outline-primary"}" data-timer-mode="focus">Tập trung</button>
+         <button class="btn ${timerMode==="shortBreak"?"btn-primary":"btn-outline-primary"}" data-timer-mode="shortBreak">Nghỉ ngắn</button>
+         <button class="btn ${timerMode==="longBreak"?"btn-primary":"btn-outline-primary"}" data-timer-mode="longBreak">Nghỉ dài</button>
+       </div>
+       <div class="timer mb-3" id="timerDisplay">${formatTime(timerSeconds)}</div>
+       <p class="text-secondary mb-3" id="timerModeLabel">${pomodoroModeLabel(timerMode)}</p>
+       <button class="btn btn-primary" id="timerStart">${timerId?"Tạm dừng":"Bắt đầu"}</button>
+       <button class="btn btn-outline-secondary" id="timerReset">Đặt lại</button>
+     </div></div>
+     <div class="col-lg-5"><div class="app-card h-100">
+       <h2 class="h5 mb-3">Tùy chỉnh thời gian</h2>
+       <form id="pomodoroSettings" class="d-grid gap-3">
+         <div><label class="form-label" for="focusMinutes">Tập trung (phút)</label><input class="form-control" type="number" id="focusMinutes" min="1" max="180" required value="${pomodoroDurations.focus}"></div>
+         <div><label class="form-label" for="shortBreakMinutes">Nghỉ ngắn (phút)</label><input class="form-control" type="number" id="shortBreakMinutes" min="1" max="180" required value="${pomodoroDurations.shortBreak}"></div>
+         <div><label class="form-label" for="longBreakMinutes">Nghỉ dài (phút)</label><input class="form-control" type="number" id="longBreakMinutes" min="1" max="180" required value="${pomodoroDurations.longBreak}"></div>
+         <button class="btn btn-outline-primary" type="submit">Lưu thiết lập</button>
+         <p class="small text-secondary mb-0">Mỗi chế độ có thể đặt từ 1 đến 180 phút. Thiết lập được lưu trên trình duyệt này.</p>
+       </form>
+     </div></div>
+   </div>`;
  if(current==="note") {
    const activeNote=notes.find(item=>item.id===activeNoteId)||null;
    content.innerHTML=`<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3"><div><h1 class="h3 mb-1">Ghi chú</h1><p class="text-secondary mb-0 small">${notes.length} ghi chú</p></div><button class="btn btn-primary" id="addNote">＋ Thêm note</button></div>
@@ -230,8 +262,45 @@ function render(){
    };
  }
  if(current==="pomodoro"){
-   $("#timerStart").onclick=()=>{if(timerId){clearInterval(timerId);timerId=null;$("#timerStart").textContent="Tiếp tục";return;}$("#timerStart").textContent="Tạm dừng";timerId=setInterval(()=>{timerSeconds=Math.max(0,timerSeconds-1);$("#timerDisplay").textContent=formatTime(timerSeconds);if(!timerSeconds){clearInterval(timerId);timerId=null;toast("Hoàn thành phiên Pomodoro!");$("#timerStart").textContent="Bắt đầu";}},1000);};
-   $("#timerReset").onclick=()=>{clearInterval(timerId);timerId=null;timerSeconds=1500;$("#timerDisplay").textContent=formatTime(timerSeconds);$("#timerStart").textContent="Bắt đầu";};
+   document.querySelectorAll("[data-timer-mode]").forEach(button=>button.onclick=()=>selectPomodoroMode(button.dataset.timerMode));
+   $("#timerStart").onclick=()=>{
+     if(timerId){clearInterval(timerId);timerId=null;$("#timerStart").textContent="Tiếp tục";return;}
+     if(timerSeconds<=0) timerSeconds=pomodoroDurations[timerMode]*60;
+     $("#timerStart").textContent="Tạm dừng";
+     timerId=setInterval(()=>{
+       timerSeconds=Math.max(0,timerSeconds-1);
+       $("#timerDisplay").textContent=formatTime(timerSeconds);
+       if(!timerSeconds){
+         clearInterval(timerId);timerId=null;
+         $("#timerStart").textContent="Bắt đầu";
+         toast(timerMode==="focus"?"Hoàn thành phiên tập trung! Đã đến giờ nghỉ.":"Đã hết giờ nghỉ. Sẵn sàng tập trung trở lại!");
+       }
+     },1000);
+   };
+   $("#timerReset").onclick=()=>{
+     clearInterval(timerId);timerId=null;
+     timerSeconds=pomodoroDurations[timerMode]*60;
+     $("#timerDisplay").textContent=formatTime(timerSeconds);
+     $("#timerStart").textContent="Bắt đầu";
+   };
+   $("#pomodoroSettings").onsubmit=e=>{
+     e.preventDefault();
+     const next={
+       focus:Number($("#focusMinutes").value),
+       shortBreak:Number($("#shortBreakMinutes").value),
+       longBreak:Number($("#longBreakMinutes").value)
+     };
+     if(Object.values(next).some(value=>!Number.isInteger(value)||value<1||value>180)){
+       toast("Vui lòng nhập thời gian từ 1 đến 180 phút.");return;
+     }
+     pomodoroDurations=next;
+     localStorage.setItem("scholar-lite-pomodoro",JSON.stringify(pomodoroDurations));
+     clearInterval(timerId);timerId=null;
+     timerSeconds=pomodoroDurations[timerMode]*60;
+     $("#timerDisplay").textContent=formatTime(timerSeconds);
+     $("#timerStart").textContent="Bắt đầu";
+     toast("Đã lưu thiết lập Pomodoro.");
+   };
  }
  if(current==="quiz"&&quiz) renderQuiz();
 }
@@ -246,6 +315,16 @@ function createNote(){
   $("#noteTitle")?.focus();
 }
 function formatTime(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");}
+function pomodoroModeLabel(mode){
+  return ({focus:"Thời gian tập trung",shortBreak:"Thời gian nghỉ ngắn",longBreak:"Thời gian nghỉ dài"})[mode]||"Pomodoro";
+}
+function selectPomodoroMode(mode){
+  if(!Object.prototype.hasOwnProperty.call(pomodoroDefaults,mode)) return;
+  clearInterval(timerId);timerId=null;
+  timerMode=mode;
+  timerSeconds=pomodoroDurations[mode]*60;
+  render();
+}
 let isAsking = false;
 
 async function callGemini(prompt,systemInstruction,maxOutputTokens=700,onChunk=()=>{}){
