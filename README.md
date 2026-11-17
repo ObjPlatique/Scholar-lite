@@ -42,6 +42,11 @@ Static HTML/CSS/JS app using Bootstrap, Firebase Authentication, Firestore, and 
 
  or `\\(...\\)` for inline math and `$...$` or `\\[...\\]` for display math. The browser uses Marked, DOMPurify, and KaTeX from CDN.
 
+## Pomodoro
+- Supports focus, short-break, and long-break modes.
+- Each duration can be customized from 1 to 180 minutes.
+- Preferences are saved in the browser using local storage.
+
 ## Local development
 
 A static server such as `python -m http.server` only serves HTML/CSS/JS; it does not execute `api/gemini.js`. Use the Vercel development runtime (`vercel dev`) to test the full app locally.
