@@ -45,7 +45,7 @@ function esc(s){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;"
 function renderMarkdown(source) {
   const raw = String(source ?? "");
   const html = window.marked ? marked.parse(raw, { gfm: true, breaks: true }) : esc(raw).replaceAll("\n", "<br>");
-  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+  return window.DOMPurify ? DOMPurify.sanitize(html) : esc(raw).replaceAll("\n", "<br>");
 }
 function renderMath(root) {
   if (!root || !window.renderMathInElement) return;
@@ -286,7 +286,7 @@ async function generateQuiz(){
 }
 function renderQuiz(){
  const area=$("#quizArea");if(!area||!quiz)return;
- area.innerHTML=`<div class="app-card"><h2 class="h5">${esc(quiz.title||"Bộ câu hỏi")}</h2>${quiz.questions.map((q,i)=>`<div class="border-top py-3"><div class="markdown-body mb-2"><strong>${i+1}. ${renderMarkdown(q.question)}</strong></div>${q.options.map((o,j)=>`<label class="d-block mb-2"><input type="radio" name="q${i}" value="${j}" ${answers[i]===j?"checked":""} ${submitted?"disabled":""}> <span class="markdown-body d-inline">${renderMarkdown(o)}</span> ${submitted&&j===q.answer?'<span class="text-success">✓ Đáp án</span>':""}</label>`).join("")}${submitted?'<p class="small text-secondary">'+esc(q.explanation||"")+'</p>':""}</div>`).join("")}<button class="btn btn-primary" id="submitQuiz" ${submitted?"disabled":""}>Nộp bài</button>${submitted?`<div class="alert alert-info mt-3">Điểm: ${quiz.questions.filter((q,i)=>answers[i]===q.answer).length}/${quiz.questions.length}</div><button class="btn btn-outline-primary" id="newQuiz">Tạo bộ khác</button>`:""}</div>`;
+ area.innerHTML=`<div class="app-card"><h2 class="h5">${esc(quiz.title||"Bộ câu hỏi")}</h2>${quiz.questions.map((q,i)=>`<div class="border-top py-3"><div class="markdown-body mb-2"><strong>${i+1}.</strong>${renderMarkdown(q.question)}</div>${q.options.map((o,j)=>`<label class="d-block mb-2"><input type="radio" name="q${i}" value="${j}" ${answers[i]===j?"checked":""} ${submitted?"disabled":""}> <span class="markdown-body d-inline">${renderMarkdown(o)}</span> ${submitted&&j===q.answer?'<span class="text-success">✓ Đáp án</span>':""}</label>`).join("")}${submitted?'<p class="small text-secondary">'+esc(q.explanation||"")+'</p>':""}</div>`).join("")}<button class="btn btn-primary" id="submitQuiz" ${submitted?"disabled":""}>Nộp bài</button>${submitted?`<div class="alert alert-info mt-3">Điểm: ${quiz.questions.filter((q,i)=>answers[i]===q.answer).length}/${quiz.questions.length}</div><button class="btn btn-outline-primary" id="newQuiz">Tạo bộ khác</button>`:""}</div>`;
  renderMath(area);
  quiz.questions.forEach((q,i)=>area.querySelectorAll(`input[name="q${i}"]`).forEach(r=>r.onchange=()=>answers[i]=Number(r.value)));
  $("#submitQuiz").onclick=()=>{if(Object.keys(answers).length!==quiz.questions.length){toast("Hãy trả lời tất cả câu hỏi.");return;}submitted=true;renderQuiz();};
