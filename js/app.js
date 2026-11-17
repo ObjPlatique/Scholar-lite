@@ -70,21 +70,24 @@ function renderMath(root) {
 async function loadData(){
   try {
     const snap=await getDoc(doc(db,"users",user.uid,"scholarLite","data"));
+    let migrateLocalSchedule=false;
     if(snap.exists()){
       const d=snap.data();
       tasks=d.tasks||[];
       note=d.note||"";
       if(Array.isArray(d.timetable)){
-        timetable=d.timetable.filter(item=>item&&typeof item.title==="string"&&Number.isInteger(Number(item.day))&&Number(item.day)>=0&&Number(item.day)<=6&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(item.start)&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(item.end)&&item.end>item.start)
+        timetable=d.timetable.filter(item=>item&&typeof item.title==="string"&&Number.isInteger(Number(item.day))&&Number(item.day)>=0&&Number(item.day)<=6&&/^([01]\d|2[0-3]):[0-5]\d$/.test(item.start)&&/^([01]\d|2[0-3]):[0-5]\d$/.test(item.end)&&item.end>item.start)
           .map((item,index)=>({id:String(item.id||("event-"+index)),title:item.title.slice(0,80),day:Number(item.day),start:item.start,end:item.end}));
         localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+        localStorage.setItem("scholar-lite-timetable-owner",user.uid);
       } else {
-        // Migrate the existing browser-only timetable to this user's Firestore record.
+        // Migrate browser-only events only when they are not already associated with another account.
+        const localOwner=localStorage.getItem("scholar-lite-timetable-owner");
         try {
           const localSchedule=JSON.parse(localStorage.getItem("scholar-lite-timetable")||"[]");
-          if(Array.isArray(localSchedule)) timetable=localSchedule;
-        } catch {}
-        if(timetable.length) await saveData();
+          timetable=localOwner&&localOwner!==user.uid?[]:(Array.isArray(localSchedule)?localSchedule:[]);
+        } catch { timetable=[]; }
+        migrateLocalSchedule=true;
       }
       if(Array.isArray(d.notes)){
         notes=d.notes.map((item,index)=>({
@@ -94,10 +97,20 @@ async function loadData(){
           updatedAt:item.updatedAt||""
         }));
       } else if(note.trim()) {
-        // Migrate the previous single-note field without losing its content.
         notes=[{id:"legacy-note",title:"Ghi chú của tôi",content:note,updatedAt:""}];
       }
       activeNoteId=notes[0]?.id||null;
+    } else {
+      const localOwner=localStorage.getItem("scholar-lite-timetable-owner");
+      try {
+        const localSchedule=JSON.parse(localStorage.getItem("scholar-lite-timetable")||"[]");
+        timetable=localOwner&&localOwner!==user.uid?[]:(Array.isArray(localSchedule)?localSchedule:[]);
+      } catch { timetable=[]; }
+      migrateLocalSchedule=true;
+    }
+    if(migrateLocalSchedule){
+      const saved=await saveData();
+      if(saved&&timetable.length) toast("Đã chuyển thời gian biểu cũ lên Firebase.");
     }
   }
   catch(e){console.warn(e);toast("Không thể tải dữ liệu Firebase.");}
@@ -107,6 +120,7 @@ async function saveData(){
   try{
     await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,notes,timetable,updatedAt:new Date().toISOString()},{merge:true});
     localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+    localStorage.setItem("scholar-lite-timetable-owner",user.uid);
     return true;
   } catch(e){
     console.warn("Firestore save failed:",e);
