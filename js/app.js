@@ -74,6 +74,18 @@ async function loadData(){
       const d=snap.data();
       tasks=d.tasks||[];
       note=d.note||"";
+      if(Array.isArray(d.timetable)){
+        timetable=d.timetable.filter(item=>item&&typeof item.title==="string"&&Number.isInteger(Number(item.day))&&Number(item.day)>=0&&Number(item.day)<=6&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(item.start)&&/^([01]\\d|2[0-3]):[0-5]\\d$/.test(item.end)&&item.end>item.start)
+          .map((item,index)=>({id:String(item.id||("event-"+index)),title:item.title.slice(0,80),day:Number(item.day),start:item.start,end:item.end}));
+        localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+      } else {
+        // Migrate the existing browser-only timetable to this user's Firestore record.
+        try {
+          const localSchedule=JSON.parse(localStorage.getItem("scholar-lite-timetable")||"[]");
+          if(Array.isArray(localSchedule)) timetable=localSchedule;
+        } catch {}
+        if(timetable.length) await saveData();
+      }
       if(Array.isArray(d.notes)){
         notes=d.notes.map((item,index)=>({
           id:item.id||("note-"+index),
@@ -92,8 +104,15 @@ async function loadData(){
 }
 async function saveData(){
   if(!user||!db)return;
-  try{await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,notes,updatedAt:new Date().toISOString()},{merge:true});}
-  catch(e){toast("Không lưu được dữ liệu: "+e.message);}
+  try{
+    await setDoc(doc(db,"users",user.uid,"scholarLite","data"),{tasks,note,notes,timetable,updatedAt:new Date().toISOString()},{merge:true});
+    localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
+    return true;
+  } catch(e){
+    console.warn("Firestore save failed:",e);
+    toast("Không lưu được dữ liệu Firebase. Vui lòng kiểm tra kết nối và quyền Firestore.");
+    return false;
+  }
 }
 
 function chatCollectionRef(){
@@ -223,7 +242,7 @@ function render(){
         </form>
       </div>
       <div class="schedule-grid">${days.map(day=>`<section class="app-card schedule-day"><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h6 mb-0">${day.name}</h2><span class="small text-secondary">${day.items.length} mục</span></div>${day.items.length?day.items.map(item=>`<div class="schedule-event"><div class="d-flex justify-content-between align-items-start gap-2"><div class="min-w-0"><div class="fw-semibold">${esc(item.title)}</div><div class="small text-secondary">${esc(item.start)} – ${esc(item.end)}</div></div><button class="btn btn-sm btn-outline-danger schedule-delete" data-id="${esc(item.id)}" aria-label="Xóa ${esc(item.title)}">×</button></div></div>`).join(""):'<p class="small text-secondary mb-0">Chưa có hoạt động.</p>'}</section>`).join("")}</div>
-      <p class="small text-secondary mt-3">Thời gian biểu được lưu trên trình duyệt hiện tại.</p>`;
+      <p class="small text-secondary mt-3">${user?"Thời gian biểu được đồng bộ với tài khoản Firebase của bạn.":"Lịch hiện được lưu trên thiết bị này. Đăng nhập để đồng bộ giữa các thiết bị."}</p>`;
   }
   if(current==="schedule"){
     $("#scheduleForm").onsubmit=e=>{
@@ -233,12 +252,16 @@ function render(){
       if(!start||!end||end<=start){toast("Giờ kết thúc phải sau giờ bắt đầu.");return;}
       timetable.push({id:globalThis.crypto?.randomUUID?.()||("event-"+Date.now()+"-"+Math.random().toString(36).slice(2)),title,day,start,end});
       localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
-      render();toast("Đã thêm hoạt động vào thời gian biểu.");
+      render();
+      if(user&&db) { const saved=await saveData(); if(saved) toast("Đã thêm và đồng bộ hoạt động lên Firebase."); }
+      else toast("Đã thêm hoạt động trên thiết bị. Đăng nhập để đồng bộ Firebase.");
     };
     document.querySelectorAll(".schedule-delete").forEach(button=>button.onclick=()=>{
       timetable=timetable.filter(item=>item.id!==button.dataset.id);
       localStorage.setItem("scholar-lite-timetable",JSON.stringify(timetable));
-      render();toast("Đã xóa hoạt động.");
+      render();
+      if(user&&db) { const saved=await saveData(); if(saved) toast("Đã xóa và đồng bộ thay đổi lên Firebase."); }
+      else toast("Đã xóa hoạt động trên thiết bị.");
     });
   }
   if(current==="note") {
